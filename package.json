@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start -p 3002",
     "lint": "next lint",
+    "test": "node scripts/test.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "predev": "node scripts/sync-pdf-worker.cjs",
     "prebuild": "node scripts/sync-pdf-worker.cjs"

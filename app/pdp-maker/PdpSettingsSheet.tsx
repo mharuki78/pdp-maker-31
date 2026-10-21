@@ -210,8 +210,8 @@ export function PdpSettingsSheet({
               {higgsfield.connected && typeof higgsfield.credits === "number" ? <p className={styles.settingsHelper}>잔여 크레딧: {higgsfield.credits}</p> : null}
               {higgsfield.error ? <div className={styles.settingsError}>{higgsfield.error}</div> : null}
               <div className={styles.settingsActions}>
-                <button className={styles.primaryButton} type="button" onClick={() => { window.open("/api/pdp/higgsfield/connect", "pdp-higgsfield-login", "popup,width=600,height=760"); }}>{higgsfield.connected ? "계정 다시 연결" : "Higgsfield 계정 연결"}</button>
-                <button className={styles.secondaryButton} type="button" disabled={higgsfield.checking} onClick={() => void higgsfield.refresh()}>연결 확인</button>
+                <button className={styles.primaryButton} type="button" disabled={higgsfield.checking} onClick={() => void higgsfield.connect()}>{higgsfield.connected ? "계정 다시 연결" : "Higgsfield 계정 연결"}</button>
+                <button className={styles.secondaryButton} type="button" disabled={higgsfield.checking} onClick={() => void higgsfield.check()}>{higgsfield.checking ? "확인 중…" : "연결 확인"}</button>
                 {higgsfield.connected ? <button className={styles.secondaryButton} type="button" onClick={async () => { await fetch("/api/pdp/higgsfield/disconnect", { method: "POST" }); await higgsfield.refresh(); }}>연결 해제 · API 모델로 전환</button> : null}
               </div>
               {higgsfield.connected ? <PdpHiggsfieldImageControls preferences={localSettings} disabled={isValidating} onChange={(preferences) => setLocalSettings((current) => ({ ...current, ...preferences }))} /> : null}

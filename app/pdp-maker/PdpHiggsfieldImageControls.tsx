@@ -2,30 +2,46 @@
 import { useCallback, useEffect, useId, useState } from "react";
 import { getHiggsfieldReferenceLimit, normalizeHiggsfieldPreferences, type HiggsfieldImagePreferences, type HiggsfieldModel } from "@runacademy/shared";
 import styles from "./pdp-maker.module.css";
+import { higgsfieldPopupPending, openHiggsfieldPopup } from "../../lib/higgsfield-popup";
 export function useHiggsfieldConnection() {
   const [connected, setConnected] = useState(false);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState("");
   const [credits, setCredits] = useState<number | undefined>();
   const refresh = useCallback(async () => {
+    if (higgsfieldPopupPending()) return;
     setChecking(true);
     try {
       const response = await fetch("/api/pdp/higgsfield/status", { cache: "no-store" });
       const data = await response.json();
-      setConnected(Boolean(data.ok && data.connected)); setCredits(data.credits); setError(data.ok ? "" : data.message ?? "연결 상태를 확인하지 못했습니다.");
+      if (higgsfieldPopupPending()) return;
+      setConnected(Boolean(data.ok && data.connected)); setCredits(data.credits); setError(current => data.ok ? data.connected ? "" : current : data.message ?? "연결 상태를 확인하지 못했습니다.");
     } catch { setConnected(false); setError("Higgsfield 연결 상태를 확인하지 못했습니다."); }
-    finally { setChecking(false); }
+    finally { if (!higgsfieldPopupPending()) setChecking(false); }
   }, []);
   useEffect(() => {
     void refresh();
     const onFocus = () => { void refresh(); };
     const onMessage = (event: MessageEvent) => { if (event.origin === window.location.origin && event.data?.type === "pdp-higgsfield-connected") void refresh(); };
+    const onConnecting = () => setChecking(true);
+    const onIdle = () => setChecking(false);
     window.addEventListener("focus", onFocus); window.addEventListener("message", onMessage);
+    window.addEventListener("pdp-higgsfield-connecting", onConnecting);
+    window.addEventListener("pdp-higgsfield-idle", onIdle);
+    window.addEventListener("pdp-higgsfield-changed", onFocus);
     const channel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("pdp-higgsfield") : null;
     if (channel) channel.onmessage = () => { void refresh(); };
-    return () => { window.removeEventListener("focus", onFocus); window.removeEventListener("message", onMessage); channel?.close(); };
+    return () => { window.removeEventListener("focus", onFocus); window.removeEventListener("message", onMessage); window.removeEventListener("pdp-higgsfield-connecting", onConnecting); window.removeEventListener("pdp-higgsfield-idle", onIdle); window.removeEventListener("pdp-higgsfield-changed", onFocus); channel?.close(); };
   }, [refresh]);
-  return { connected, checking, credits, error, refresh };
+  const popup = async (mode: "connect" | "bridge") => {
+    setError("");
+    try { await openHiggsfieldPopup(mode); }
+    catch (error) { setError(error instanceof Error ? error.message : "연결을 확인하지 못했습니다."); }
+  };
+  return { connected, checking, credits, error, refresh,
+    connect: () => popup("connect"),
+    check: () => window.self !== window.top && !connected ? popup("bridge") : refresh(),
+  };
 }
 const OPTION_LABELS: Record<string, string> = { low: "빠르게 · Low", medium: "표준 · Medium", high: "고품질 · High", xhigh: "더 높은 품질 · XHigh", max: "최고 품질 · Max", sunburst: "Sunburst", flare: "Flare" };
 export async function validateHiggsfieldReferenceCount(modelId: string, count: number) {

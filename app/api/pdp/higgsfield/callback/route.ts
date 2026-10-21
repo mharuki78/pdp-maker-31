@@ -1,4 +1,4 @@
-import { clearPendingCookie, oauthRequest, readPending, sessionCookie, toSession, validState } from "../../../../../lib/pdp-server/higgsfield-auth";
+import { clearPendingCookie, createHiggsfieldHandoff, higgsfieldBridgePage, oauthRequest, readPending, sessionCookie, toSession, validState } from "../../../../../lib/pdp-server/higgsfield-auth";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export async function GET(request: Request) {
@@ -11,8 +11,11 @@ export async function GET(request: Request) {
     const code = url.searchParams.get("code");
     if (!code) throw new Error("로그인 승인 코드를 받지 못했습니다.");
     const data = await oauthRequest("/oauth/token", { grant_type: "authorization_code", code, client_id: pending.clientId, redirect_uri: pending.redirectUri, code_verifier: pending.verifier });
-    headers.append("Set-Cookie", sessionCookie(request, toSession(data, pending.clientId))); ok = true;
+    const session = toSession(data, pending.clientId);
+    headers.append("Set-Cookie", sessionCookie(request, session)); ok = true;
+    if (pending.handoffChallenge) return higgsfieldBridgePage(request, { ticket: createHiggsfieldHandoff(request, session, pending.handoffChallenge) }, headers);
   } catch (error) { message = error instanceof Error ? error.message : "Higgsfield 연결에 실패했습니다."; }
+  if (!ok && pending?.handoffChallenge) return higgsfieldBridgePage(request, { error: message }, headers);
   const safeMessage = message.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]!));
   return new Response(`<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Higgsfield 연결</title><body style="font-family:system-ui;padding:32px"><h1>Higgsfield 연결</h1><p>${safeMessage}</p><a href="/pdp-maker">마법사로 돌아가기</a>${ok ? `<script>if(window.opener){window.opener.postMessage({type:'pdp-higgsfield-connected'},${JSON.stringify(pending ? new URL(pending.redirectUri).origin : url.origin)});}try{new BroadcastChannel('pdp-higgsfield').postMessage('connected');}catch(e){}window.close();</script>` : ""}</body></html>`, { status: ok ? 200 : 400, headers });
 }
