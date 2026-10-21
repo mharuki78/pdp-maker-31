@@ -40,10 +40,3 @@ export function getPdpExportPlan(sizes: Array<{ width: number; height: number }>
   });
   return { width, height: y, pages, scaledDown: width < 1080 };
 }
-
-/** Contain the whole hero: a square thumbnail must never cut off product or copy. */
-export function getContainRect(sourceWidth: number, sourceHeight: number, targetWidth: number, targetHeight: number) {
-  const scale = Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight);
-  const width = sourceWidth * scale, height = sourceHeight * scale;
-  return { x: (targetWidth - width) / 2, y: (targetHeight - height) / 2, width, height };
-}

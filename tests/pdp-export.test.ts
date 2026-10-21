@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getPdpExportPlan, getContainRect, validatePdpExportAsset } from "../lib/pdp-export-plan";
+import { getPdpExportPlan, validatePdpExportAsset } from "../lib/pdp-export-plan";
 
 test("joining preserves first image, ordered body and last image without gaps or crops", () => {
   const plan = getPdpExportPlan([
@@ -28,15 +28,6 @@ test("invalid or empty image sizes are rejected instead of producing an incomple
   for (const dimensions of [[], [{ width: 0, height: 300 }], [{ width: 100, height: NaN }]]) {
     assert.throws(() => getPdpExportPlan(dimensions));
   }
-});
-
-test("750px thumbnail contains the whole hero without cropping or stretching", () => {
-  assert.deepEqual(getContainRect(900, 1600, 750, 750), { x: 164.0625, y: 0, width: 421.875, height: 750 });
-  assert.deepEqual(getContainRect(1500, 750, 750, 750), { x: 0, y: 187.5, width: 750, height: 375 });
-});
-
-test("1000px Coupang thumbnail also keeps the full hero at the requested dimensions", () => {
-  assert.deepEqual(getContainRect(900, 1600, 1000, 1000), { x: 218.75, y: 0, width: 562.5, height: 1000 });
 });
 
 test("saved fixed images accept local raster data only, with bounded dimensions and size", () => {

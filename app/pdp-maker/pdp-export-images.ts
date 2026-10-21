@@ -1,4 +1,5 @@
-import { getContainRect, getPdpExportPlan } from "../../lib/pdp-export-plan";
+import { getPdpExportPlan } from "../../lib/pdp-export-plan";
+import { findProductBounds, getProductThumbnailFrame, type ThumbnailAdjustment } from "../../lib/pdp-thumbnail";
 
 export function exportBlobDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -31,7 +32,7 @@ function canvasBlob(canvas: HTMLCanvasElement, type: string) {
   }, type, 0.94));
 }
 
-export async function createPdpThumbnail(blob: Blob, size: 750 | 1000 = 750) {
+export async function createPdpThumbnail(blob: Blob, size: 750 | 1000 = 750, adjustment?: ThumbnailAdjustment) {
   const source = await openImage(blob);
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
@@ -40,8 +41,22 @@ export async function createPdpThumbnail(blob: Blob, size: 750 | 1000 = 750) {
     if (!context) throw new Error("썸네일을 만들 수 없는 브라우저입니다.");
     context.fillStyle = "#fff";
     context.fillRect(0, 0, size, size);
-    const rect = getContainRect(source.image.naturalWidth, source.image.naturalHeight, size, size);
-    context.drawImage(source.image, rect.x, rect.y, rect.width, rect.height);
+    const width = source.image.naturalWidth, height = source.image.naturalHeight;
+    const sample = document.createElement("canvas");
+    const ratio = Math.min(1, 480 / Math.max(width, height));
+    sample.width = Math.max(1, Math.round(width * ratio)); sample.height = Math.max(1, Math.round(height * ratio));
+    let bounds;
+    try {
+      const pixels = sample.getContext("2d", { willReadFrequently: true });
+      if (!pixels) throw new Error("상품 사진을 분석할 수 없습니다.");
+      pixels.drawImage(source.image, 0, 0, sample.width, sample.height);
+      const detected = findProductBounds(pixels.getImageData(0, 0, sample.width, sample.height).data, sample.width, sample.height);
+      bounds = { x: detected.x * width / sample.width, y: detected.y * height / sample.height, width: detected.width * width / sample.width, height: detected.height * height / sample.height };
+    } finally { sample.width = sample.height = 0; }
+    const frame = getProductThumbnailFrame(width, height, bounds, adjustment);
+    const scale = size / frame.size;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(source.image, -frame.x * scale, -frame.y * scale, width * scale, height * scale);
     return await canvasBlob(canvas, "image/jpeg");
   } finally { source.close(); canvas.width = canvas.height = 0; }
 }

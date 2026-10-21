@@ -239,6 +239,11 @@ export function PdpEditor({
 
   const currentSection = sections[currentSectionIndex];
   const exportSections = useMemo(() => sections.map(section => ({ id: section.section_id, name: getDisplaySectionName(section), image: section.generatedImage })), [sections]);
+  const thumbnailProductImage = useMemo(() => {
+    const hero = sections.find(section => /hero|히어로/i.test(`${section.section_id} ${section.section_name}`)) ?? sections[0];
+    const reference = hero?.productReference;
+    return reference ? toPdpImageSource(reference.base64, reference.mimeType) : originalImageSrc;
+  }, [sections, originalImageSrc]);
   const isPlanningPlaceholder = currentSection?.section_id === 'planning_start';
   // 구버전 초안의 기획 자리표시 구간: 자료 화면으로 돌아가 초안을 새로 만든다.
   const continuePlanning = () => { setErrorMessage(''); onReviewMaterials?.(); };
@@ -2322,7 +2327,7 @@ export function PdpEditor({
 
   return (
     <main className={styles.page}>
-      <PdpExportPanel open={isExportPanelOpen} onOpenChange={setIsExportPanelOpen} sections={exportSections} renderSection={captureSectionBlob} onBusyChange={setIsDownloadingAll} />
+      <PdpExportPanel open={isExportPanelOpen} onOpenChange={setIsExportPanelOpen} sections={exportSections} productImage={thumbnailProductImage} renderSection={captureSectionBlob} onBusyChange={setIsDownloadingAll} />
       <section className={styles.editorShell} onClick={clearLayerSelection}>
         <header className={`${styles.editorHeader} ${styles.editorTopbar}`} onClick={stopShellClick}>
           <div className={styles.editorTopbarBrand}>

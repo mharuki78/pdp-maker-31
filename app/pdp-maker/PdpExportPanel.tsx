@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Download, ImagePlus, Loader2, Trash2 } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../../components/ui/sheet";
 import type { PdpExportAsset, PdpExportAssets } from "../../lib/pdp-export-plan";
+import type { ThumbnailAdjustment } from "../../lib/pdp-thumbnail";
 import { loadPdpExportAssets, readPdpExportAsset, savePdpExportAsset } from "./pdp-export-assets";
 import { createPdpThumbnail, exportAssetBlob, exportBlobDataUrl, downloadPreparedExport, joinPdpImages } from "./pdp-export-images";
 import { sanitizeSectionFileName } from "./pdp-editor-support";
@@ -15,11 +16,12 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sections: PdpExportSection[];
+  productImage: string;
   renderSection: (index: number) => Promise<Blob>;
   onBusyChange: (busy: boolean) => void;
 }
 
-export function PdpExportPanel({ open, onOpenChange, sections, renderSection, onBusyChange }: Props) {
+export function PdpExportPanel({ open, onOpenChange, sections, productImage, renderSection, onBusyChange }: Props) {
   const [assets, setAssets] = useState<PdpExportAssets>({ first: null, last: null });
   const [loading, setLoading] = useState(false);
   const [settingsReady, setSettingsReady] = useState(false);
@@ -33,11 +35,11 @@ export function PdpExportPanel({ open, onOpenChange, sections, renderSection, on
   const [thumbnail, setThumbnail] = useState<{ naver: { blob: Blob; url: string }; coupang: { blob: Blob; url: string } } | null>(null);
   const [combined, setCombined] = useState<{ blob: Blob; url: string; width: number; height: number; scaledDown: boolean } | null>(null);
   const [zipUrl, setZipUrl] = useState("");
-  const heroBlob = useRef<Blob | null>(null);
+  const [thumbnailPhoto, setThumbnailPhoto] = useState<PdpExportAsset | null>(null);
+  const [framing, setFraming] = useState<ThumbnailAdjustment>({ zoom: 1, x: 0, y: 0 });
+  const thumbnailInput = useRef<HTMLInputElement>(null);
   const available = sections.map((section, index) => ({ ...section, index })).filter(section => section.image);
   const missing = sections.length - available.length;
-  const heroIndex = sections.findIndex(section => section.image && /hero|히어로/i.test(`${section.id} ${section.name}`));
-  const thumbnailIndex = heroIndex >= 0 ? heroIndex : sections.findIndex(section => section.image);
   const locked = loading || saving || busy;
 
   useEffect(() => {
@@ -55,22 +57,41 @@ export function PdpExportPanel({ open, onOpenChange, sections, renderSection, on
   }, [open, assets, renderSection]);
 
   useEffect(() => {
-    heroBlob.current = null; setThumbnail(null); setThumbnailError("");
-    if (!open || thumbnailIndex < 0) return;
+    setThumbnailPhoto(null); setFraming({ zoom: 1, x: 0, y: 0 });
+  }, [productImage]);
+
+  useEffect(() => { setZipUrl(""); }, [thumbnail]);
+
+  useEffect(() => {
+    setThumbnail(null); setThumbnailError(""); setMakingThumbnail(false);
+    const photo = thumbnailPhoto?.dataUrl || productImage;
+    if (!open || !photo) return;
     let cancelled = false;
+    const controller = new AbortController();
     setMakingThumbnail(true);
-    (async () => {
-      const hero = await renderSection(thumbnailIndex);
-      const naverBlob = await createPdpThumbnail(hero, 750);
-      const coupangBlob = await createPdpThumbnail(hero, 1000);
+    const timer = window.setTimeout(() => { void (async () => {
+      const response = await fetch(photo, { signal: controller.signal });
+      if (!response.ok) throw new Error("상품 사진을 읽지 못했습니다. 썸네일용 상품 사진을 선택해 주세요.");
+      const source = await response.blob();
+      const naverBlob = await createPdpThumbnail(source, 750, framing);
+      if (cancelled) return;
+      const coupangBlob = await createPdpThumbnail(source, 1000, framing);
       const naverUrl = await exportBlobDataUrl(naverBlob), coupangUrl = await exportBlobDataUrl(coupangBlob);
       if (cancelled) return;
-      heroBlob.current = hero;
       setThumbnail({ naver: { blob: naverBlob, url: naverUrl }, coupang: { blob: coupangBlob, url: coupangUrl } });
     })().catch(reason => { if (!cancelled) setThumbnailError(reason instanceof Error ? reason.message : "썸네일을 만들지 못했습니다."); })
-      .finally(() => { if (!cancelled) setMakingThumbnail(false); });
-    return () => { cancelled = true; };
-  }, [open, renderSection, thumbnailIndex]);
+      .finally(() => { if (!cancelled) setMakingThumbnail(false); }); }, 180);
+    return () => { cancelled = true; controller.abort(); window.clearTimeout(timer); };
+  }, [open, productImage, thumbnailPhoto, framing]);
+
+  async function selectThumbnailPhoto(file: File) {
+    setSaving(true); setThumbnailError("");
+    try {
+      const photo = await readPdpExportAsset(file);
+      setThumbnailPhoto(photo); setFraming({ zoom: 1, x: 0, y: 0 });
+    } catch (reason) { setThumbnailError(reason instanceof Error ? reason.message : "상품 사진을 읽지 못했습니다."); }
+    finally { setSaving(false); }
+  }
 
   async function updateAsset(slot: keyof PdpExportAssets, file: File | null) {
     setSaving(true); setError(""); setMessage("");
@@ -89,7 +110,7 @@ export function PdpExportPanel({ open, onOpenChange, sections, renderSection, on
     if (assets.first) pages.push(fixed(assets.first, "first"));
     for (const section of available) {
       setProgress(`본문 이미지 준비 ${pages.length - (assets.first ? 1 : 0) + 1}/${available.length}`);
-      const blob = section.index === thumbnailIndex && heroBlob.current ? heroBlob.current : await renderSection(section.index);
+      const blob = await renderSection(section.index);
       pages.push({ label: sanitizeSectionFileName(section.id), blob, ext: "jpg" });
     }
     if (assets.last) pages.push(fixed(assets.last, "last"));
@@ -152,7 +173,7 @@ export function PdpExportPanel({ open, onOpenChange, sections, renderSection, on
               <div className={styles.thumbnailPreview}>
                 {thumbnail ? <img src={thumbnail.naver.url} width={750} height={750} alt="자동 생성된 정사각형 썸네일 미리보기" /> : <span>{makingThumbnail ? "만드는 중…" : "이미지 준비 전"}</span>}
               </div>
-              <div><p>대표 히어로를 정사각형에 맞춥니다. 제품과 글자가 잘리지 않게 여백을 둡니다.</p><p className={styles.help}>추가 AI 생성 비용 없음</p>
+              <div><p>상품 원본 사진의 빈 여백을 줄여 크게 배치합니다. 두 규격에 같은 구도를 적용합니다.</p><p className={styles.help}>상세페이지 문구·첫 이미지·마지막 이미지 제외</p>
                 <div className={styles.thumbnailDownloads}>
                   {thumbnail && !locked ? <>
                     <a className={ui.secondaryButton} href={thumbnail.naver.url} download="pdp-thumbnail-naver-750x750.jpg"><Download size={15} aria-hidden="true" />네이버 750×750 저장</a>
@@ -160,6 +181,20 @@ export function PdpExportPanel({ open, onOpenChange, sections, renderSection, on
                   </> : <><button className={ui.secondaryButton} disabled type="button">네이버 750×750 저장</button><button className={ui.secondaryButton} disabled type="button">쿠팡 1000×1000 저장</button></>}
                 </div>
               </div>
+            </div>
+            <div className={styles.framing}>
+              <div className={styles.photoActions}>
+                <input ref={thumbnailInput} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label="썸네일 상품 사진 파일" onChange={event => { const file = event.target.files?.[0]; if (file) void selectThumbnailPhoto(file); event.target.value = ""; }} />
+                <button type="button" className={ui.secondaryButton} disabled={locked} onClick={() => thumbnailInput.current?.click()}><ImagePlus size={15} aria-hidden="true" />상품 사진 선택</button>
+                <button type="button" className={styles.resetFraming} disabled={locked} onClick={() => { setThumbnailPhoto(null); setFraming({ zoom: 1, x: 0, y: 0 }); }}>기본 구도로</button>
+              </div>
+              {thumbnailPhoto ? <p className={styles.help}>썸네일 전용: {thumbnailPhoto.fileName}</p> : null}
+              <p className={styles.help}>긴 상세페이지나 배경이 복잡한 사진은 상품 위치를 조절하거나 상품 사진을 따로 선택해 주세요.</p>
+              {([{ key: "zoom", label: "상품 확대", min: .5, max: 3, step: .05, value: `${Math.round(framing.zoom * 100)}%` }, { key: "x", label: "좌우 위치", min: -50, max: 50, step: 1, value: `${framing.x}` }, { key: "y", label: "상하 위치", min: -50, max: 50, step: 1, value: `${framing.y}` }] as const).map(control => <label key={control.key} className={styles.rangeControl}>
+                <span>{control.label}<output>{control.value}</output></span>
+                <input type="range" min={control.min} max={control.max} step={control.step} value={framing[control.key]} disabled={locked} aria-label={control.label} onChange={event => setFraming(current => ({ ...current, [control.key]: Number(event.target.value) }))} />
+              </label>)}
+              <p className={styles.help}>이 작업에서만 적용 · 추가 AI 생성 비용 없음</p>
             </div>
             {thumbnailError ? <p className={styles.error} role="alert">{thumbnailError}</p> : null}
           </section>
