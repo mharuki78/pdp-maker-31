@@ -2,6 +2,7 @@ import { loadPdpClientSettings } from "./pdp-settings";
 import { normalizeOpenAiImageModel } from "@runacademy/shared";
 import type { AspectRatio, PdpAnalysisImageMetadata, PdpValidateApiKeyResponse } from "@runacademy/shared";
 import { resolveGeminiApiKeyHeaderValue, resolveOpenAiApiKeyHeaderValue } from "./pdp-settings";
+import { parseImageOptimizerResponse, prepareImageOptimizerUpload } from "../../lib/pdp-image-upload";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 
@@ -279,8 +280,9 @@ export async function compressPreparedImagePayload(
 }
 
 async function optimizeImageFileOnServer(file: File, allowLongPageSampling: boolean, budgets?: { analysisByteBudget: number; generationByteBudget: number }) {
+  const upload = await prepareImageOptimizerUpload(file);
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("file", upload);
   formData.append("allowLongPageSampling", String(allowLongPageSampling));
   if (budgets) {
     formData.append("forceCompression", "true");
@@ -292,7 +294,7 @@ async function optimizeImageFileOnServer(file: File, allowLongPageSampling: bool
     method: "POST",
     body: formData
   });
-  const payload = await response.json() as
+  const payload = await parseImageOptimizerResponse(response) as
     | {
         ok: true;
         image: {
@@ -309,9 +311,17 @@ async function optimizeImageFileOnServer(file: File, allowLongPageSampling: bool
   if (!response.ok || !payload.ok) {
     throw new Error(payload.ok ? "이미지를 최적화하지 못했습니다." : payload.message ?? "이미지를 최적화하지 못했습니다.");
   }
+  const originalDimensions = upload !== file ? await readImageDimensions(file).catch(() => null) : null;
 
   return {
     ...payload.image,
+    fileName: file.name,
+    analysisMetadata: payload.image.analysisMetadata && upload !== file ? {
+      ...payload.image.analysisMetadata,
+      originalWidth: originalDimensions?.width ?? payload.image.analysisMetadata.originalWidth,
+      originalHeight: originalDimensions?.height ?? payload.image.analysisMetadata.originalHeight,
+      originalBytes: file.size,
+    } : payload.image.analysisMetadata,
     previewUrl: toDataUrl(payload.image.mimeType, payload.image.base64),
     generationPreviewUrl:
       payload.image.generationBase64 && payload.image.generationMimeType

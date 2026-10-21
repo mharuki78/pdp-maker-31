@@ -51,7 +51,6 @@ import {
   validateOpenAiApiKey
 } from "./pdp-utils";
 
-import { PdpWaitingVideoFrame } from "./PdpWaitingVideo";
 import { AI_PROVIDER_OPTIONS, APP_TITLE, CUSTOMER_REVIEW_ANALYSIS_SAMPLE_SIZE, EMPTY_CLIENT_SETTINGS, INITIAL_HERO_SECTION_COUNT, MAX_SOURCE_MATERIAL_FILES, OUTPUT_MODE_OPTIONS, PreparedImage, SavedDraftsSheet, UploadDropzone, buildAnalyzeSourceMaterials, buildSourceMaterialsNotice, buildUploadContextGuidance, clientPreferredProvider, createDefaultEditorDraftState, extractCustomerReviewRows, formatAnalysisMode, formatCompactFileName, formatDuration, formatGenerationReference, formatOptimizationSavings, formatOptimizedDimensions, formatSavedDraftDate, formatSourceMaterialDetail, formatSourceMaterialKind, getSourceMaterialsForDraft, getVisibleSourceMaterials, isLongDetailSampling, isSupportedCustomerReviewFile, isSupportedSourceMaterialFile, markPrimarySourceMaterial, pickGenerationPreferences, prepareSourceMaterialFile, renderRatioIcon, sampleCustomerReviewRowsEvenly, summarizeFileForUsageLog, summarizePreparedImageForUsageLog, summarizeSourceMaterialsForUi, syncSourceMaterialsWithPrimary, uniqueReviewRows } from "./pdp-maker-client-support";
 
 export function PdpMakerClient() {
@@ -1428,11 +1427,6 @@ export function PdpMakerClient() {
 
             <p className={styles.processingNote}>결과는 받는 즉시 자동 저장되고 편집 화면으로 넘어가요. 창을 닫거나 새로고침하면 응답을 확인하지 못할 수 있어요.</p>
 
-            <div className={`${styles.waitingVideoCard} ${styles.waitingVideoCardFull}`} aria-label="기다리는 동안 추천 영상">
-              <div className={styles.waitingVideoFrame}>
-                <PdpWaitingVideoFrame />
-              </div>
-            </div>
           </section>
         ) : (
           <div className={styles.setupGridSingle} id="pdp-maker-workspace">

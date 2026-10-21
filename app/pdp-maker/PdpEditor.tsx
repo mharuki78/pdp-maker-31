@@ -79,7 +79,6 @@ import { logPdpUsage } from "./pdp-usage-log";
 import { PdpRequestError, apiJson, prepareImageFile, GENERATION_API_TIMEOUT_MS, HIGGSFIELD_GENERATION_API_TIMEOUT_MS, toDataUrl } from "./pdp-utils";
 import { toPdpImageSource } from "./pdp-image-source";
 
-import { PdpWaitingVideoFrame } from "./PdpWaitingVideo";
 import { ALIGN_OPTIONS, APP_TITLE, BASIC_SOLID_COLORS, DEFAULT_COLOR_RECOMMENDATIONS, EDITOR_CANVAS_BASE_WIDTH, EXPORT_CANVAS_WIDTH, FONT_OPTIONS, FONT_WEIGHT_OPTIONS, ImageColorRecommendations, MANUAL_SECTION_OPTIONS, MODEL_AGE_OPTIONS, MODEL_COUNTRY_OPTIONS, MODEL_GENDER_OPTIONS, ManualSectionOption, PdpEditorProps, PdpSection, STYLE_OPTIONS, WAITING_PROGRESS_INTERVAL_MS, applyLanguageToTextOverlay, buildDefaultTextLayout, buildExportNode, buildOverlayBackgroundStyle, buildOverlayShellStyle, buildOverlayTextStyle, buildShapeLayerStyle, clampValue, cloneCanvasLayer, downloadBlob, estimateOverlayBox, exampleReviewCopy, extractImageColorRecommendations, formatSavedAt, getAllowedWorkbenchTab, getAspectRatioValue, getCanvasBaseHeight, getDisplaySectionGoal, getDisplaySectionName, getIndexAfterMove, getLocalizedBullets, getLocalizedCopy, getModelAgeLabel, getModelCountryLabel, getModelGenderLabel, getSectionStatusBadges, getTextLayoutTemplateLabel, getWaitingEstimateMs, getWaitingProgressPercent, getWorkbenchTabLabel, hasOverlayEntry, inferTextLayoutTemplate, isEditableKeyboardTarget, isShapeLayer, isTextLayer, isUncertainGenerationError, moveArrayItem, moveIndexedRecordItem, normalizeCanvasLayer, normalizeImageOptions, normalizeOverlayRecord, normalizeSectionCopyFields, normalizeSectionOptions, normalizeShapeLayer, normalizeTextOverlay, refreshLegacyTemplateLayouts, sanitizeSectionFileName, shiftIndexedRecordForDelete, shiftIndexedRecordForInsert, sortColorsByContrast, toNumericSize, uniqueColors } from "./pdp-editor-support";
 
 export function PdpEditor({
@@ -2954,15 +2953,10 @@ export function PdpEditor({
                       ? "새 옵션 적용 중"
                       : "현재 섹션 생성 중"}
                 </span>
-                <span>추천 영상 재생</span>
+                <span>완료되면 자동으로 저장됩니다.</span>
               </div>
             </div>
 
-            <div className={`${styles.waitingVideoCard} ${styles.waitingVideoCardFull}`} aria-label="기다리는 동안 추천 영상">
-              <div className={styles.waitingVideoFrame}>
-                <PdpWaitingVideoFrame />
-              </div>
-            </div>
           </div>
         </div>
       ) : null}

@@ -4,6 +4,7 @@ import { PdpController } from "../../../../lib/pdp-server/pdp.controller";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 const pdpController = new PdpController();
 

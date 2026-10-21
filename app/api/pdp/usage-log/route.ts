@@ -37,6 +37,13 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, message: "No valid log events." }, { status: 400 });
   }
 
+  if (process.env.VERCEL === "1") {
+    // Vercel's deployment directory is read-only. Acknowledge the batch so
+    // clients do not continuously retry; retain only operational identifiers.
+    console.info(JSON.stringify({ type: "pdp_usage", events: events.map(({ event, level, source, sessionId, sequence, timestamp }) => ({ event, level, source, sessionId, sequence, timestamp })) }));
+    return Response.json({ ok: true, count: events.length, sink: "runtime" });
+  }
+
   const logDir = path.join(process.cwd(), "output", "user-logs");
   const fileName = `${receivedAt.slice(0, 10)}.jsonl`;
   await mkdir(logDir, { recursive: true });
