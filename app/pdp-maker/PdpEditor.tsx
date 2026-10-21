@@ -2367,7 +2367,7 @@ export function PdpEditor({
         <header className={`${styles.editorHeader} ${styles.editorTopbar}`} onClick={stopShellClick}>
           <div className={styles.editorTopbarBrand}>
             <button className={styles.brandHomeButton} onClick={onReset} type="button" aria-label="처음 화면으로 이동">
-              <span className={styles.brandMark} aria-hidden="true">마</span>
+              <span className={styles.brandMark} aria-hidden="true"></span>
               <h1 className={styles.editorHeading}>{APP_TITLE}</h1>
             </button>
             <span className={styles.editorSaveStatus} role="status">

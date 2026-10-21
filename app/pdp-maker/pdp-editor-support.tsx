@@ -231,7 +231,7 @@ export const BASIC_SOLID_COLORS = [
   "#d8b65b",
   "#111111"
 ];
-export const APP_TITLE = "한이룸의 상세페이지 마법사 3.1";
+export const APP_TITLE = "상세페이지 마법사";
 export const EDITOR_CANVAS_BASE_WIDTH = 460;
 export const EXPORT_CANVAS_WIDTH = 1080;
 export const TEXT_LAYOUT_COLORS = {

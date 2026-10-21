@@ -1281,9 +1281,9 @@ export function PdpMakerClient() {
           type="button"
           aria-label="처음 화면으로 이동"
         >
-          <span className={styles.brandMark} aria-hidden="true">마</span>
+          <span className={styles.brandMark} aria-hidden="true"></span>
           <span className={styles.appTopbarTitle}>{APP_TITLE}</span>
-          <span className={styles.brandEndorsement}>by 한이룸</span>
+          <span className={styles.brandEndorsement}>배곧인터내셔널</span>
         </button>
 
         {appState !== "processing" && !isUploadEmpty ? (

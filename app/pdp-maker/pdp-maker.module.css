@@ -6181,3 +6181,9 @@
 .setupPage .processingPanel > * { max-width: 100%; min-width: 0; box-sizing: border-box; }
 .setupPage .processingPanel .processingMeter { width: 100%; max-width: 720px; }
 .setupPage .processingPanel .waitingVideoCard { width: 100%; max-width: 920px; }
+
+/* 배곧 전용 브랜드: 제공받은 로고 원본을 표시합니다. */
+.brandMark {
+  background: #fff url("/brand/baegot-mark-2026.svg") center / contain no-repeat;
+  border-radius: 0;
+}

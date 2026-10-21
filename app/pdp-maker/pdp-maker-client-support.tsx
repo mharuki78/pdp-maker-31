@@ -78,7 +78,7 @@ export type SectionImageBatchResult = {
 };
 
 export const INITIAL_HERO_SECTION_COUNT = 1;
-export const APP_TITLE = "한이룸의 상세페이지 마법사 3.1";
+export const APP_TITLE = "상세페이지 마법사";
 
 
 
