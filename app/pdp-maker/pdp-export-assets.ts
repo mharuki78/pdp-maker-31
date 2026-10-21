@@ -66,3 +66,43 @@ export async function readPdpExportAsset(file: File): Promise<PdpExportAsset> {
   try { await image.decode(); } catch { throw new Error("열 수 없는 이미지입니다. PNG·JPG·WebP 파일을 다시 선택해 주세요."); }
   return validatePdpExportAsset({ fileName: file.name, dataUrl, width: image.naturalWidth, height: image.naturalHeight });
 }
+
+export async function productThumbnailCacheKey(source: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(source));
+  return `product-white-v1:${Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+type CachedThumbnail = { key: string; image: PdpExportAsset };
+function normalizeThumbnailCache(value: unknown): CachedThumbnail[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap(entry => {
+    try {
+      if (!/^product-white-v1:[a-f0-9]{64}$/.test(entry?.key)) return [];
+      return [{ key: entry.key as string, image: validatePdpExportAsset(entry.image) }];
+    } catch { return []; }
+  }).slice(0, 6);
+}
+
+/** Keep six product masters locally; framing and market-size exports never call AI. */
+export async function loadProductThumbnail(key: string): Promise<string | null> {
+  const db = await openSettings();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, "readonly");
+    const request = transaction.objectStore(STORE_NAME).get("product-thumbnails");
+    transaction.oncomplete = () => { db.close(); resolve(normalizeThumbnailCache(request.result).find(entry => entry.key === key)?.image.dataUrl ?? null); };
+    transaction.onabort = transaction.onerror = () => { db.close(); reject(new Error("저장된 상품 썸네일을 읽지 못했습니다.")); };
+  });
+}
+
+export async function saveProductThumbnail(key: string, image: PdpExportAsset): Promise<void> {
+  const valid = validatePdpExportAsset(image);
+  const db = await openSettings();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.get("product-thumbnails");
+    request.onsuccess = () => store.put([{ key, image: valid }, ...normalizeThumbnailCache(request.result).filter(entry => entry.key !== key)].slice(0, 6), "product-thumbnails");
+    transaction.oncomplete = () => { db.close(); resolve(); };
+    transaction.onabort = transaction.onerror = () => { db.close(); reject(new Error("생성은 완료됐지만 브라우저에 보관하지 못했습니다. 지금 썸네일을 저장해 주세요. 다시 추출하면 비용이 발생합니다.")); };
+  });
+}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { findProductBounds, getProductThumbnailFrame } from "../lib/pdp-thumbnail";
+import { findProductBounds, getProductThumbnailFrame, normalizeThumbnailWhiteBackground } from "../lib/pdp-thumbnail";
 
 function photo(width: number, height: number, transparent = false) {
   const pixels = new Uint8ClampedArray(width * height * 4).fill(255);
@@ -49,4 +49,15 @@ test("framing can move to the product and zoom in, identically for both export s
 
 test("an empty background safely keeps the original bounds", () => {
   assert.deepEqual(findProductBounds(photo(100, 100).pixels, 100, 100), { x: 0, y: 0, width: 100, height: 100 });
+});
+
+test("off-white outside pixels become pure white without bleaching enclosed product details", () => {
+  const pixels = new Uint8ClampedArray(10 * 10 * 4);
+  for (let i = 0; i < pixels.length; i += 4) pixels.set([245, 245, 245, 255], i);
+  for (let y = 2; y <= 7; y++) for (let x = 3; x <= 6; x++) pixels.set([30, 120, 100, 255], (y * 10 + x) * 4);
+  pixels.set([245, 245, 245, 255], (4 * 10 + 4) * 4);
+  normalizeThumbnailWhiteBackground(pixels, 10, 10);
+  assert.deepEqual(Array.from(pixels.slice(0, 4)), [255, 255, 255, 255]);
+  assert.deepEqual(Array.from(pixels.slice((4 * 10 + 4) * 4, (4 * 10 + 4) * 4 + 4)), [245, 245, 245, 255]);
+  assert.deepEqual(Array.from(pixels.slice((2 * 10 + 3) * 4, (2 * 10 + 3) * 4 + 4)), [30, 120, 100, 255]);
 });

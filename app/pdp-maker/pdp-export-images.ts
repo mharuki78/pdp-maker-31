@@ -1,5 +1,5 @@
 import { getPdpExportPlan } from "../../lib/pdp-export-plan";
-import { findProductBounds, getProductThumbnailFrame, type ThumbnailAdjustment } from "../../lib/pdp-thumbnail";
+import { findProductBounds, getProductThumbnailFrame, normalizeThumbnailWhiteBackground, type ThumbnailAdjustment } from "../../lib/pdp-thumbnail";
 
 export function exportBlobDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -57,6 +57,9 @@ export async function createPdpThumbnail(blob: Blob, size: 750 | 1000 = 750, adj
     const scale = size / frame.size;
     context.imageSmoothingQuality = "high";
     context.drawImage(source.image, -frame.x * scale, -frame.y * scale, width * scale, height * scale);
+    const pixels = context.getImageData(0, 0, size, size);
+    normalizeThumbnailWhiteBackground(pixels.data, size, size);
+    context.putImageData(pixels, 0, 0);
     return await canvasBlob(canvas, "image/jpeg");
   } finally { source.close(); canvas.width = canvas.height = 0; }
 }

@@ -8,6 +8,7 @@ import { PDP_VISUAL_FORMATS, PDP_PERSUASION_JOBS, PDP_STORY_BEATS } from "../sha
 import { PDP_DRAFT_SECTION_LIMIT } from "../shared/pdp-draft";
 import { HiggsfieldMcp, HiggsfieldError } from "./higgsfield-mcp";
 import { PDP_IMAGE_TEXT_POLICY } from "./pdp-image-text-policy";
+import { PRODUCT_THUMBNAIL_PROMPT } from "./pdp-product-thumbnail";
 import { createHash } from "crypto";
 import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai";
 import {
@@ -685,6 +686,16 @@ JSON schema: ${JSON.stringify(schema)}`;
   }
 
   async generateSectionImage(request: import('../shared').PdpGenerateImageRequest, geminiKey?: string, openAiKey?: string, higgsfieldToken?: string) {
+    if (request.options?.purpose === "product-thumbnail") {
+      // Ignore PDP casting, copy and revision locks, even when inherited by a client.
+      request = { ...request, aspectRatio: "1:1", desiredTone: undefined,
+        section: { ...request.section, prompt_en: PRODUCT_THUMBNAIL_PROMPT },
+        options: { purpose: "product-thumbnail", style: "studio", withModel: false, outputMode: "editable",
+          aiProvider: request.options.aiProvider, imageModel: request.options.imageModel, imageQuality: request.options.imageQuality,
+          higgsfieldImageQuality: request.options.higgsfieldImageQuality, higgsfieldImageResolution: request.options.higgsfieldImageResolution,
+          higgsfieldImageVariant: request.options.higgsfieldImageVariant } };
+      return this.generateSectionImageUnchecked(request, geminiKey, openAiKey, higgsfieldToken);
+    }
     request = { ...request, options: { style: "studio", withModel: false, ...request.options, outputMode: getPdpSectionOutputMode(request.section, request.options?.outputMode ?? 'full-image') } };
     const issues = getPdpCopyIssues(request.section, request.options?.outputMode !== 'editable');
     if (issues.length) throw new PdpServiceError('INVALID_REQUEST', `이미지 생성 전 카피를 수정해 주세요. ${issues.join(' ')}`);
@@ -1436,6 +1447,7 @@ function buildImagePrompt(
   desiredTone?: string,
   options?: InternalImageGenOptions
 ) {
+  if (options?.purpose === "product-thumbnail") return PRODUCT_THUMBNAIL_PROMPT;
   if (options?.baseImageBase64 && options.editInstruction?.trim()) {
     return `${buildImageRevisionPrompt(options)}\n${PDP_IMAGE_TEXT_POLICY}`;
   }
@@ -1961,6 +1973,7 @@ function normalizeVisibleSectionCopyFields(section: SectionBlueprint): SectionBl
 
 function normalizeImageOptions(options?: Partial<InternalImageGenOptions>): InternalImageGenOptions {
   return {
+    purpose: options?.purpose === "product-thumbnail" ? "product-thumbnail" : undefined,
     style: options?.style ?? "studio",
     withModel: options?.withModel ?? false,
     aiProvider: normalizeAiProvider(options?.aiProvider),

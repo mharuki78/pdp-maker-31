@@ -244,6 +244,19 @@ export function PdpEditor({
     const reference = hero?.productReference;
     return reference ? toPdpImageSource(reference.base64, reference.mimeType) : originalImageSrc;
   }, [sections, originalImageSrc]);
+  const extractThumbnailProduct = useCallback(async (source: string) => {
+    const match = source.match(/^data:(image\/(?:png|jpeg|webp));base64,([\s\S]+)$/);
+    if (!match) throw new Error("썸네일용 상품 사진을 다시 선택해 주세요.");
+    const response = await apiJson<PdpGenerateImageResponse>("/pdp/images", { method: "POST", body: JSON.stringify({
+      originalImageBase64: match[2], originalImageMimeType: match[1], section: toGenerationSection(sections[0]), aspectRatio: "1:1",
+      options: { purpose: "product-thumbnail", aiProvider, style: "studio", withModel: false,
+        imageModel: aiProvider === "higgsfield" ? higgsfieldPreferences.higgsfieldImageModel : aiProvider === "openai" ? openAiImageModel : geminiImageModel,
+        imageQuality: openAiImageQuality, higgsfieldImageQuality: higgsfieldPreferences.higgsfieldImageQuality,
+        higgsfieldImageResolution: higgsfieldPreferences.higgsfieldImageResolution, higgsfieldImageVariant: higgsfieldPreferences.higgsfieldImageVariant }
+    }) }, { geminiApiKey, openAiApiKey, timeoutMs: aiProvider === "higgsfield" ? HIGGSFIELD_GENERATION_API_TIMEOUT_MS : GENERATION_API_TIMEOUT_MS });
+    if (!response.ok) throw new PdpRequestError(response.message, isUncertainGenerationError(response.code));
+    return toDataUrl(response.mimeType, response.imageBase64);
+  }, [sections, aiProvider, higgsfieldPreferences, openAiImageModel, geminiImageModel, openAiImageQuality, geminiApiKey, openAiApiKey]);
   const isPlanningPlaceholder = currentSection?.section_id === 'planning_start';
   // 구버전 초안의 기획 자리표시 구간: 자료 화면으로 돌아가 초안을 새로 만든다.
   const continuePlanning = () => { setErrorMessage(''); onReviewMaterials?.(); };
@@ -2327,7 +2340,8 @@ export function PdpEditor({
 
   return (
     <main className={styles.page}>
-      <PdpExportPanel open={isExportPanelOpen} onOpenChange={setIsExportPanelOpen} sections={exportSections} productImage={thumbnailProductImage} renderSection={captureSectionBlob} onBusyChange={setIsDownloadingAll} />
+      <PdpExportPanel open={isExportPanelOpen} onOpenChange={setIsExportPanelOpen} sections={exportSections} productImage={thumbnailProductImage} renderSection={captureSectionBlob} onBusyChange={setIsDownloadingAll} extractProduct={extractThumbnailProduct}
+        thumbnailCost={attempts => <PdpCostPreview provider={aiProvider} model={aiProvider === "higgsfield" ? higgsfieldPreferences.higgsfieldImageModel : aiProvider === "openai" ? openAiImageModel : geminiImageModel} quality={aiProvider === "higgsfield" ? higgsfieldPreferences.higgsfieldImageQuality : aiProvider === "openai" ? openAiImageQuality : "1K"} resolution={higgsfieldPreferences.higgsfieldImageResolution} variant={higgsfieldPreferences.higgsfieldImageVariant} aspectRatio="1:1" count={1} countLabel="상품 추출" attempts={attempts} />} />
       <section className={styles.editorShell} onClick={clearLayerSelection}>
         <header className={`${styles.editorHeader} ${styles.editorTopbar}`} onClick={stopShellClick}>
           <div className={styles.editorTopbarBrand}>

@@ -139,6 +139,7 @@ export interface PdpSourceMaterial {
 }
 
 export interface ImageGenOptions {
+  purpose?: "product-thumbnail";
   style: PdpImageStyle;
   withModel: boolean;
   aiProvider?: PdpAiProvider;

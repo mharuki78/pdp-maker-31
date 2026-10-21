@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Download, ImagePlus, Loader2, Trash2 } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../../components/ui/sheet";
 import type { PdpExportAsset, PdpExportAssets } from "../../lib/pdp-export-plan";
 import type { ThumbnailAdjustment } from "../../lib/pdp-thumbnail";
-import { loadPdpExportAssets, readPdpExportAsset, savePdpExportAsset } from "./pdp-export-assets";
+import { loadPdpExportAssets, readPdpExportAsset, savePdpExportAsset, productThumbnailCacheKey, loadProductThumbnail, saveProductThumbnail } from "./pdp-export-assets";
 import { createPdpThumbnail, exportAssetBlob, exportBlobDataUrl, downloadPreparedExport, joinPdpImages } from "./pdp-export-images";
 import { sanitizeSectionFileName } from "./pdp-editor-support";
 import ui from "./pdp-maker.module.css";
@@ -19,9 +19,11 @@ interface Props {
   productImage: string;
   renderSection: (index: number) => Promise<Blob>;
   onBusyChange: (busy: boolean) => void;
+  extractProduct: (source: string) => Promise<string>;
+  thumbnailCost: (attempts: number) => ReactNode;
 }
 
-export function PdpExportPanel({ open, onOpenChange, sections, productImage, renderSection, onBusyChange }: Props) {
+export function PdpExportPanel({ open, onOpenChange, sections, productImage, renderSection, onBusyChange, extractProduct, thumbnailCost }: Props) {
   const [assets, setAssets] = useState<PdpExportAssets>({ first: null, last: null });
   const [loading, setLoading] = useState(false);
   const [settingsReady, setSettingsReady] = useState(false);
@@ -38,9 +40,16 @@ export function PdpExportPanel({ open, onOpenChange, sections, productImage, ren
   const [thumbnailPhoto, setThumbnailPhoto] = useState<PdpExportAsset | null>(null);
   const [framing, setFraming] = useState<ThumbnailAdjustment>({ zoom: 1, x: 0, y: 0 });
   const thumbnailInput = useRef<HTMLInputElement>(null);
+  const extractionInFlight = useRef(false);
+  const [extracting, setExtracting] = useState(false);
+  const [extractionAttempts, setExtractionAttempts] = useState(0);
+  const [cacheLoading, setCacheLoading] = useState(false);
+  const [cacheKey, setCacheKey] = useState("");
+  const [productOnlyPhoto, setProductOnlyPhoto] = useState<string | null>(null);
+  const sourcePhoto = thumbnailPhoto?.dataUrl || productImage;
   const available = sections.map((section, index) => ({ ...section, index })).filter(section => section.image);
   const missing = sections.length - available.length;
-  const locked = loading || saving || busy;
+  const locked = loading || saving || busy || extracting;
 
   useEffect(() => {
     if (!open) return;
@@ -63,8 +72,22 @@ export function PdpExportPanel({ open, onOpenChange, sections, productImage, ren
   useEffect(() => { setZipUrl(""); }, [thumbnail]);
 
   useEffect(() => {
+    setProductOnlyPhoto(null); setCacheKey(""); setThumbnail(null); setThumbnailError("");
+    if (!open || !sourcePhoto) return;
+    let cancelled = false;
+    setCacheLoading(true);
+    void (async () => {
+      const key = await productThumbnailCacheKey(sourcePhoto);
+      const cached = await loadProductThumbnail(key);
+      if (!cancelled) { setCacheKey(key); setProductOnlyPhoto(cached); }
+    })().catch(() => { if (!cancelled) setThumbnailError("저장된 상품컷을 읽지 못했습니다. 브라우저 저장 공간을 확인한 뒤 다시 열어 주세요."); })
+      .finally(() => { if (!cancelled) setCacheLoading(false); });
+    return () => { cancelled = true; };
+  }, [open, sourcePhoto]);
+
+  useEffect(() => {
     setThumbnail(null); setThumbnailError(""); setMakingThumbnail(false);
-    const photo = thumbnailPhoto?.dataUrl || productImage;
+    const photo = productOnlyPhoto;
     if (!open || !photo) return;
     let cancelled = false;
     const controller = new AbortController();
@@ -82,7 +105,24 @@ export function PdpExportPanel({ open, onOpenChange, sections, productImage, ren
     })().catch(reason => { if (!cancelled) setThumbnailError(reason instanceof Error ? reason.message : "썸네일을 만들지 못했습니다."); })
       .finally(() => { if (!cancelled) setMakingThumbnail(false); }); }, 180);
     return () => { cancelled = true; controller.abort(); window.clearTimeout(timer); };
-  }, [open, productImage, thumbnailPhoto, framing]);
+  }, [open, productOnlyPhoto, framing]);
+
+  async function extractThumbnail() {
+    if (extractionInFlight.current || !cacheKey || !sourcePhoto) return;
+    extractionInFlight.current = true; setExtracting(true); onBusyChange(true); setThumbnailError(""); setMessage("");
+    setExtractionAttempts(current => current + 1);
+    try {
+      const result = await extractProduct(sourcePhoto);
+      const blob = exportAssetBlob(result);
+      const asset = await readPdpExportAsset(new File([blob], "product-thumbnail-master.png", { type: blob.type }));
+      setProductOnlyPhoto(asset.dataUrl); setFraming({ zoom: 1, x: 0, y: 0 });
+      try { await saveProductThumbnail(cacheKey, asset); }
+      catch (reason) { setThumbnailError(reason instanceof Error ? reason.message : "썸네일을 바로 저장해 주세요."); }
+      setMessage("상품 추출 1회가 완료됐습니다. 두 규격과 구도 조절은 이 상품컷을 재사용합니다.");
+    } catch (reason) {
+      setThumbnailError(`${reason instanceof Error ? reason.message : "상품을 추출하지 못했습니다."} 자동 재시도하지 않습니다. 응답 확인이 필요하면 공급자 생성 내역을 먼저 확인해 주세요.`);
+    } finally { extractionInFlight.current = false; setExtracting(false); onBusyChange(false); }
+  }
 
   async function selectThumbnailPhoto(file: File) {
     setSaving(true); setThumbnailError("");
@@ -153,8 +193,8 @@ export function PdpExportPanel({ open, onOpenChange, sections, productImage, ren
     finally { setBusy(false); onBusyChange(false); setProgress(""); }
   }
 
-  return <Sheet open={open} onOpenChange={next => { if (!busy && !saving) onOpenChange(next); }}>
-    <SheetContent closeLabel="닫기" closeDisabled={busy || saving} className={styles.panel} style={{ width: "min(960px, 100vw)", maxWidth: "100vw" }} onClick={event => event.stopPropagation()} onEscapeKeyDown={event => { if (busy || saving) event.preventDefault(); }} onPointerDownOutside={event => { if (busy || saving) event.preventDefault(); }}>
+  return <Sheet open={open} onOpenChange={next => { if (!busy && !saving && !extracting) onOpenChange(next); }}>
+    <SheetContent closeLabel="닫기" closeDisabled={busy || saving || extracting} className={styles.panel} style={{ width: "min(960px, 100vw)", maxWidth: "100vw" }} onClick={event => event.stopPropagation()} onEscapeKeyDown={event => { if (busy || saving || extracting) event.preventDefault(); }} onPointerDownOutside={event => { if (busy || saving || extracting) event.preventDefault(); }}>
       <SheetHeader className={styles.header}>
         <SheetTitle>상세페이지 다운로드</SheetTitle>
         <SheetDescription>첫 이미지부터 마지막까지 한 장으로. 썸네일도 함께 준비합니다.</SheetDescription>
@@ -168,12 +208,12 @@ export function PdpExportPanel({ open, onOpenChange, sections, productImage, ren
             <p className={styles.help}>{loading ? "저장된 공통 이미지를 불러오는 중…" : "PNG·JPG·WebP · 파일당 10MB 이하 · 원본 비율 유지"}</p>
           </section>
           <section className={styles.group} aria-labelledby="pdp-thumbnail-title">
-            <div className={styles.sectionHeading}><h3 id="pdp-thumbnail-title">자동 썸네일</h3><span>네이버·쿠팡 · JPG</span></div>
+            <div className={styles.sectionHeading}><h3 id="pdp-thumbnail-title">흰 배경 상품 썸네일</h3><span>네이버·쿠팡 · JPG</span></div>
             <div className={styles.thumbnailRow}>
               <div className={styles.thumbnailPreview}>
-                {thumbnail ? <img src={thumbnail.naver.url} width={750} height={750} alt="자동 생성된 정사각형 썸네일 미리보기" /> : <span>{makingThumbnail ? "만드는 중…" : "이미지 준비 전"}</span>}
+                {thumbnail ? <img src={thumbnail.naver.url} width={750} height={750} alt="흰 배경에 상품만 배치한 썸네일 미리보기" /> : <span>{extracting ? "상품 추출 중…" : cacheLoading ? "저장된 상품컷 확인 중…" : makingThumbnail ? "만드는 중…" : "상품 추출 전"}</span>}
               </div>
-              <div><p>상품 원본 사진의 빈 여백을 줄여 크게 배치합니다. 두 규격에 같은 구도를 적용합니다.</p><p className={styles.help}>상세페이지 문구·첫 이미지·마지막 이미지 제외</p>
+              <div><p>배경·문구·소품을 없애고 상품만 흰 배경에 크게 배치합니다.</p><p className={styles.help}>네이버 750×750 · 쿠팡 1000×1000</p>
                 <div className={styles.thumbnailDownloads}>
                   {thumbnail && !locked ? <>
                     <a className={ui.secondaryButton} href={thumbnail.naver.url} download="pdp-thumbnail-naver-750x750.jpg"><Download size={15} aria-hidden="true" />네이버 750×750 저장</a>
@@ -182,23 +222,36 @@ export function PdpExportPanel({ open, onOpenChange, sections, productImage, ren
                 </div>
               </div>
             </div>
+            {!productOnlyPhoto ? <div className={styles.extraction}>
+              {open ? thumbnailCost(extractionAttempts) : null}
+              <button type="button" className={ui.primaryButton} disabled={locked || cacheLoading || !cacheKey} onClick={() => void extractThumbnail()}>{extracting ? <Loader2 className={styles.spin} size={16} aria-hidden="true" /> : <ImagePlus size={16} aria-hidden="true" />}{extracting ? "상품만 추출하는 중…" : "상품만 추출해 두 규격 만들기"}</button>
+              <p className={styles.help}>선택한 AI 모델로 상품컷 1장을 만듭니다. 버튼을 눌렀을 때만 과금되며, 두 규격은 결과를 재사용합니다. 현재 선택한 원본에서 광고 문구와 배경을 제거합니다.</p>
+            </div> : <>
+              <p className={styles.help}>보관한 상품컷 사용 중 · 구도 조절·두 규격 저장에 추가 AI 비용 없음</p>
+              <details className={styles.extraction}><summary>상품컷 다시 추출 · 추가 비용 발생</summary>
+                {open ? thumbnailCost(extractionAttempts) : null}
+                <button type="button" className={ui.secondaryButton} disabled={locked} onClick={() => void extractThumbnail()}>상품컷 다시 추출하기</button>
+              </details>
+            </>}
             <div className={styles.framing}>
               <div className={styles.photoActions}>
                 <input ref={thumbnailInput} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label="썸네일 상품 사진 파일" onChange={event => { const file = event.target.files?.[0]; if (file) void selectThumbnailPhoto(file); event.target.value = ""; }} />
                 <button type="button" className={ui.secondaryButton} disabled={locked} onClick={() => thumbnailInput.current?.click()}><ImagePlus size={15} aria-hidden="true" />상품 사진 선택</button>
-                <button type="button" className={styles.resetFraming} disabled={locked} onClick={() => { setThumbnailPhoto(null); setFraming({ zoom: 1, x: 0, y: 0 }); }}>기본 구도로</button>
+                {thumbnailPhoto ? <button type="button" className={styles.resetFraming} disabled={locked} onClick={() => { setThumbnailPhoto(null); setFraming({ zoom: 1, x: 0, y: 0 }); }}>원래 상품 사진</button> : null}
+                <button type="button" className={styles.resetFraming} disabled={locked || !productOnlyPhoto} onClick={() => setFraming({ zoom: 1, x: 0, y: 0 })}>기본 구도로</button>
               </div>
               {thumbnailPhoto ? <p className={styles.help}>썸네일 전용: {thumbnailPhoto.fileName}</p> : null}
-              <p className={styles.help}>긴 상세페이지나 배경이 복잡한 사진은 상품 위치를 조절하거나 상품 사진을 따로 선택해 주세요.</p>
+              <p className={styles.help}>상품이 여러 개인 상세페이지는 상품 사진을 따로 선택하면 더 정확하게 추출할 수 있습니다.</p>
               {([{ key: "zoom", label: "상품 확대", min: .5, max: 3, step: .05, value: `${Math.round(framing.zoom * 100)}%` }, { key: "x", label: "좌우 위치", min: -50, max: 50, step: 1, value: `${framing.x}` }, { key: "y", label: "상하 위치", min: -50, max: 50, step: 1, value: `${framing.y}` }] as const).map(control => <label key={control.key} className={styles.rangeControl}>
                 <span>{control.label}<output>{control.value}</output></span>
-                <input type="range" min={control.min} max={control.max} step={control.step} value={framing[control.key]} disabled={locked} aria-label={control.label} onChange={event => setFraming(current => ({ ...current, [control.key]: Number(event.target.value) }))} />
+                <input type="range" min={control.min} max={control.max} step={control.step} value={framing[control.key]} disabled={locked || !productOnlyPhoto} aria-label={control.label} onChange={event => setFraming(current => ({ ...current, [control.key]: Number(event.target.value) }))} />
               </label>)}
-              <p className={styles.help}>이 작업에서만 적용 · 추가 AI 생성 비용 없음</p>
+              <p className={styles.help}>구도는 현재 편집 화면에서 유지됩니다. 상품컷은 이 PC·브라우저에 최근 6장까지 보관합니다.</p>
             </div>
             {thumbnailError ? <p className={styles.error} role="alert">{thumbnailError}</p> : null}
           </section>
           <div className={styles.actions}>
+            {!thumbnail ? <p className={styles.help}>상품 추출 전에는 PNG·ZIP에 상세페이지 이미지만 저장됩니다. 상품을 추출하면 두 썸네일도 ZIP에 포함됩니다.</p> : null}
             {missing ? <p className={styles.warning}>본문 {missing}장이 아직 없습니다. 모두 생성하면 통합 PNG를 저장할 수 있습니다. ZIP에는 이미지가 있는 {available.length}장만 포함됩니다.</p> : null}
             <button className={ui.primaryButton} disabled={locked || !settingsReady || makingThumbnail || !available.length || missing > 0} onClick={() => void exportImages("joined")} type="button">
               {busy ? <Loader2 className={styles.spin} size={17} aria-hidden="true" /> : <Download size={17} aria-hidden="true" />}{busy ? "파일 준비 중…" : "이어진 PNG 다운로드"}

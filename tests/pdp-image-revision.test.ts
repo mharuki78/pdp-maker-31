@@ -22,8 +22,10 @@ const section = (id: string, name: string): SectionBlueprint => ({
 // reference ordering, and prompt selection without sending media or spending credits.
 async function capture(section: SectionBlueprint, options: Partial<ImageGenOptions> = {}) {
   let submitted: Parameters<HiggsfieldMcp["generate"]>[0] | undefined;
+  let calls = 0;
   const previous = HiggsfieldMcp.prototype.generate;
   HiggsfieldMcp.prototype.generate = async function (input) {
+    calls++;
     submitted = input;
     return { imageBase64: "cmVzdWx0", mimeType: "image/png" };
   };
@@ -35,6 +37,7 @@ async function capture(section: SectionBlueprint, options: Partial<ImageGenOptio
         baseImageBase64: current, ...options },
     }, undefined, undefined, "test-only-token");
     assert.ok(submitted);
+    assert.equal(calls, 1, "a user action must make exactly one paid image request");
     return submitted;
   } finally {
     HiggsfieldMcp.prototype.generate = previous;
@@ -89,3 +92,22 @@ for (const targetedEdit of [false, true]) {
     assert.match(sent.prompt, /(?:check|proofread).*every.*(?:line|text)/i);
   });
 }
+
+test("product thumbnails isolate the product on white without advertising copy or scene locks", async () => {
+  const sent = await capture(section("S1", "대표 히어로"), {
+    purpose: "product-thumbnail", withModel: true,
+    referenceModelImageBase64: person, referenceModelImageMimeType: "image/png",
+  });
+  assert.equal(sent.aspectRatio, "1:1");
+  assert.equal(sent.references.length, 1, "only the actual product reference can influence the thumbnail");
+  assert.match(sent.prompt, /pure white.*#FFFFFF/i);
+  assert.match(sent.prompt, /no text|do not.*(?:text|lettering)/i);
+  assert.match(sent.prompt, /remove.*(?:background|props)/i);
+  assert.match(sent.prompt, /(?:preserve|keep).*?(?:geometry|silhouette)/i);
+  assert.doesNotMatch(sent.prompt, /LEGACY_|existing layout|On-image headline|FINAL CUSTOMER-FACING TEXT CHECK|natural, fluent Korean/);
+});
+
+test("a text-free product thumbnail does not require approved PDP headlines", async () => {
+  const sent = await capture({ ...section("S1", "대표 히어로"), headline: "", prompt_en: "" }, { purpose: "product-thumbnail" });
+  assert.match(sent.prompt, /product/i);
+});

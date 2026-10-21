@@ -1,5 +1,27 @@
 export interface ProductBounds { x: number; y: number; width: number; height: number; }
 export interface ThumbnailAdjustment { zoom: number; x: number; y: number; }
+/** Clean only edge-connected near-white pixels after the AI product extraction. */
+export function normalizeThumbnailWhiteBackground(pixels: Uint8ClampedArray, width: number, height: number) {
+  const visited = new Uint8Array(width * height), queue = new Uint32Array(width * height);
+  let tail = 0;
+  const add = (index: number) => {
+    if (visited[index]) return;
+    visited[index] = 1;
+    const i = index * 4, r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+    if (Math.min(r, g, b) < 235 || Math.max(r, g, b) - Math.min(r, g, b) > 12) return;
+    queue[tail++] = index;
+  };
+  for (let x = 0; x < width; x++) { add(x); add((height - 1) * width + x); }
+  for (let y = 0; y < height; y++) { add(y * width); add(y * width + width - 1); }
+  for (let head = 0; head < tail; head++) {
+    const index = queue[head], i = index * 4, x = index % width;
+    pixels[i] = pixels[i + 1] = pixels[i + 2] = pixels[i + 3] = 255;
+    if (x > 0) add(index - 1);
+    if (x < width - 1) add(index + 1);
+    if (index >= width) add(index - width);
+    if (index + width < width * height) add(index + width);
+  }
+}
 
 /** Trim only a consistent background; this is not AI product segmentation. */
 export function findProductBounds(pixels: Uint8ClampedArray, width: number, height: number): ProductBounds {
