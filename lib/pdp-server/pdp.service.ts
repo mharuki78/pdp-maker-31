@@ -7,6 +7,7 @@ import { CodexTextError, textProviderContext, requestCodexJson } from './pdp-cod
 import { PDP_VISUAL_FORMATS, PDP_PERSUASION_JOBS, PDP_STORY_BEATS } from "../shared/pdp-selling-plan";
 import { PDP_DRAFT_SECTION_LIMIT } from "../shared/pdp-draft";
 import { HiggsfieldMcp, HiggsfieldError } from "./higgsfield-mcp";
+import { PDP_IMAGE_TEXT_POLICY } from "./pdp-image-text-policy";
 import { createHash } from "crypto";
 import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai";
 import {
@@ -1436,7 +1437,7 @@ function buildImagePrompt(
   options?: InternalImageGenOptions
 ) {
   if (options?.baseImageBase64 && options.editInstruction?.trim()) {
-    return buildImageRevisionPrompt(options);
+    return `${buildImageRevisionPrompt(options)}\n${PDP_IMAGE_TEXT_POLICY}`;
   }
   const copyIssues = getPdpCopyIssues(section, options?.outputMode === "full-image");
   if (copyIssues.length) throw new PdpServiceError("INVALID_REQUEST", `이미지 생성 전 문구를 수정해 주세요. ${copyIssues.join(" ")}`);
@@ -1594,7 +1595,7 @@ function buildImagePrompt(
       "If a person reference is supplied, preserve that person's identity and change only styling, pose and setting. Do not imply the generated person is an actual customer, named reviewer or verified buyer; do not add invented names, ratings or endorsements."
     ].join(" ");
   }
-  return enhancedPrompt;
+  return `${enhancedPrompt}\n${PDP_IMAGE_TEXT_POLICY}`;
 }
 
 /**

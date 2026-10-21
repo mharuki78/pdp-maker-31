@@ -76,3 +76,16 @@ test("regeneration without a written edit keeps the normal scene-generation work
   assert.match(sent.prompt, /On-image headline: 기존 승인 제목/);
   assert.equal(sent.references.length, 1);
 });
+
+for (const targetedEdit of [false, true]) {
+  test(`${targetedEdit ? "targeted edits" : "new sections"} require natural Korean and exclude source-language/internal instructions from the pixels`, async () => {
+    const sent = await capture(section("S2", "겨울 외출의 걸 문제"), targetedEdit ? {} : {
+      isRegeneration: false, editInstruction: undefined, baseImageBase64: undefined,
+    });
+    assert.match(sent.prompt, /natural.*Korean/i);
+    assert.match(sent.prompt, /Chinese.*(?:translate|Korean)/i);
+    assert.match(sent.prompt, /(?:never|do not) render.*(?:internal|production)/i);
+    assert.match(sent.prompt, /existing Korean.*(?:unchanged|verbatim)/i);
+    assert.match(sent.prompt, /(?:check|proofread).*every.*(?:line|text)/i);
+  });
+}
