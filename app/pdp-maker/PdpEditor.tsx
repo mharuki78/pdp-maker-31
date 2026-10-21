@@ -11,9 +11,9 @@ import { getPdpSectionOutputMode, getSellingSectionRatio, getPdpCopyIssues, getP
 import { PdpRevisionControls, PdpCostPreview } from "./PdpRevisionControls";
 
 import type { CSSProperties, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
-import JSZip from "jszip";
+import { PdpExportPanel } from "./PdpExportPanel";
 import {
   AlignCenter,
   AlignLeft,
@@ -204,6 +204,7 @@ export function PdpEditor({
   );
   const [showSaveToast, setShowSaveToast] = useState(false);
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
+  const [isExportPanelOpen, setIsExportPanelOpen] = useState(false);
   const [pendingDeleteSectionIndex, setPendingDeleteSectionIndex] = useState<number | null>(null);
   const [canvasScale, setCanvasScale] = useState(1);
   // 상단 '작업' 메뉴: 바깥 클릭·Esc로 닫는다. 백업 파일 입력이 유지되도록 항상 렌더링하고 표시만 토글한다.
@@ -237,6 +238,7 @@ export function PdpEditor({
   }>(null);
 
   const currentSection = sections[currentSectionIndex];
+  const exportSections = useMemo(() => sections.map(section => ({ id: section.section_id, name: getDisplaySectionName(section), image: section.generatedImage })), [sections]);
   const isPlanningPlaceholder = currentSection?.section_id === 'planning_start';
   // 구버전 초안의 기획 자리표시 구간: 자료 화면으로 돌아가 초안을 새로 만든다.
   const continuePlanning = () => { setErrorMessage(''); onReviewMaterials?.(); };
@@ -2226,7 +2228,7 @@ export function PdpEditor({
     });
   };
 
-  const captureSectionBlob = async (sectionIndex: number) => {
+  const captureSectionBlob = useCallback(async (sectionIndex: number) => {
     const section = sections[sectionIndex];
     if (!section?.generatedImage) {
       throw new Error("이미지가 없는 섹션은 다운로드할 수 없습니다.");
@@ -2245,6 +2247,7 @@ export function PdpEditor({
     });
 
     document.body.appendChild(exportNode);
+    let canvas: HTMLCanvasElement | undefined;
 
     try {
       // Wait for Pretendard (loaded via a remote CDN @import) to finish loading before
@@ -2272,7 +2275,7 @@ export function PdpEditor({
         });
       });
 
-      const canvas = await html2canvas(exportNode, {
+      canvas = await html2canvas(exportNode, {
         useCORS: true,
         allowTaint: true,
         backgroundColor: null,
@@ -2280,7 +2283,7 @@ export function PdpEditor({
       });
 
       const blob = await new Promise<Blob | null>((resolve) => {
-        canvas.toBlob(resolve, "image/jpeg", 0.92);
+        canvas!.toBlob(resolve, "image/jpeg", 0.92);
       });
 
       if (!blob) {
@@ -2290,8 +2293,9 @@ export function PdpEditor({
       return blob;
     } finally {
       exportNode.remove();
+      if (canvas) canvas.width = canvas.height = 0;
     }
-  };
+  }, [sections, outputMode, overlaysBySection, originalImageSrc, aspectRatio]);
 
   const handleDownload = async () => {
     if (!currentSection.generatedImage) {
@@ -2316,52 +2320,9 @@ export function PdpEditor({
     }
   };
 
-  const handleDownloadAll = async () => {
-    const downloadableSections = sections
-      .map((section, index) => ({ section, index }))
-      .filter((entry) => Boolean(entry.section.generatedImage));
-
-    if (!downloadableSections.length) {
-      setErrorMessage("다운로드할 이미지가 아직 없습니다.");
-      logEditorEvent("editor.all_sections_download_blocked", { reason: "no_downloadable_sections" }, "warn");
-      return;
-    }
-
-    try {
-      setIsDownloadingAll(true);
-      logEditorEvent("editor.all_sections_download_started", {
-        downloadableCount: downloadableSections.length
-      });
-      setSelectedOverlayId(null);
-      setEditingOverlayId(null);
-      setActiveColorPalette(null);
-
-      const zip = new JSZip();
-
-      for (const { section, index } of downloadableSections) {
-        const blob = await captureSectionBlob(index);
-        zip.file(`pdp-${String(index + 1).padStart(2, "0")}-${sanitizeSectionFileName(section.section_id)}.jpg`, blob);
-      }
-
-      const archive = await zip.generateAsync({ type: "blob" });
-      downloadBlob(archive, `pdp-sections-${new Date().toISOString().slice(0, 10)}.zip`);
-      setNotice(`${downloadableSections.length}개 섹션 이미지를 ZIP으로 다운로드했습니다.`);
-      logEditorEvent("editor.all_sections_downloaded", {
-        downloadableCount: downloadableSections.length,
-        zipSize: archive.size
-      });
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "전체 이미지를 ZIP으로 다운로드하지 못했습니다.");
-      logEditorEvent("editor.all_sections_download_failed", {
-        downloadableCount: downloadableSections.length
-      }, "error", error instanceof Error ? error : String(error));
-    } finally {
-      setIsDownloadingAll(false);
-    }
-  };
-
   return (
     <main className={styles.page}>
+      <PdpExportPanel open={isExportPanelOpen} onOpenChange={setIsExportPanelOpen} sections={exportSections} renderSection={captureSectionBlob} onBusyChange={setIsDownloadingAll} />
       <section className={styles.editorShell} onClick={clearLayerSelection}>
         <header className={`${styles.editorHeader} ${styles.editorTopbar}`} onClick={stopShellClick}>
           <div className={styles.editorTopbarBrand}>
@@ -2385,13 +2346,13 @@ export function PdpEditor({
             ) : null}
             <button
               className={`${styles.secondaryButton} ${styles.headerActionButton} ${styles.zipDownloadButton}`}
-              disabled={!generatedCount || isDownloadingAll}
-              onClick={handleDownloadAll}
-              title={sections.length - generatedCount > 0 ? `이미지가 있는 ${generatedCount}장만 ZIP에 담겨요 · 미생성 ${sections.length - generatedCount}장 제외` : `${generatedCount}장 ZIP`}
+              disabled={isEditorBusy || isDownloadingAll}
+              onClick={() => { setIsHeaderMenuOpen(false); setSelectedOverlayId(null); setEditingOverlayId(null); setActiveColorPalette(null); setIsExportPanelOpen(true); }}
+              title="공통 첫·마지막 이미지, 이어진 PNG, 네이버·쿠팡 썸네일과 개별 ZIP"
               type="button"
             >
               {isDownloadingAll ? <Loader2 className={styles.spinIcon} size={14} /> : <Download size={14} />}
-              전체 이미지 다운 · {generatedCount}장
+              전체 다운로드 · {generatedCount}장
             </button>
             <button
               className={`${styles.primaryButton} ${styles.headerActionButton} ${styles.currentDownloadButton}`}
